@@ -45,10 +45,10 @@ Triangle::renderGL()
 }
 
 
-
 bool
 Triangle::intersect(HitInfo& result, const Ray& ray,float tMin, float tMax)
 {
+  g_profile.n_raytri_intersect++;
 	TriangleMesh::TupleI3 ti3 = m_mesh->vIndices()[m_index];
 	const Vector3 & v0 = m_mesh->vertices()[ti3.x]; //vertex a of triangle
 	const Vector3 & v1 = m_mesh->vertices()[ti3.y]; //vertex b of triangle
@@ -67,15 +67,21 @@ Triangle::intersect(HitInfo& result, const Ray& ray,float tMin, float tMax)
   Vector3 d = Vector3(v0.x - ray.o.x,
                       v0.y - ray.o.y,
                       v0.z - ray.o.z);
-  float det = dot( cross(a,b) , c);
-  float detx = dot( cross(d,b) , c);
-  float dety = dot( cross(a,d) , c);
-  float detz = dot( cross(a,b) , d);
+  Vector3 temp = cross(b,c);
+  float det = dot(a, temp); // (a x b) . c = a . (b x c)
+  float detx = dot(d, temp); // (d x b) . c = d . (b x c)
   float beta = detx / det;
+  if (beta < 0 || beta > 1.0)
+    return false;
+  temp = cross(a,d);
+  float dety = dot(temp, c);
   float gamma = dety / det;
+  if (gamma < 0 || beta + gamma > 1.0)
+    return false;
+  float detz = - dot(temp, b); // (a x b) . d = - (a x d) . b
   float t = detz / det;
   
-  if (beta > 0 && gamma > 0 && (beta + gamma < 1)) {
+  if (t >= tMin && t <= tMax) {
     
     result.t = t;
     result.P = ray.o + t * ray.d;

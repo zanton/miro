@@ -6,6 +6,7 @@
 #define KDTREE_BUILD_THRESHOLD 100
 #define KDTREE_N_SAMPLES_TO_PIVOT 10
 
+Profile g_profile;
 
 Space::Space(Vector3 lb, Vector3 ub, Objects * o) :
   m_lb(lb), m_ub(ub), m_objects(o)
@@ -60,19 +61,15 @@ Space::calcSAH(int dim, Vector3 point) {
   Vector3 new_ub = m_ub;
   switch (dim) {
   case 0:
-    assert( new_lb.x <= point.x && point.x <= new_ub.x );
+    //assert( new_lb.x <= point.x && point.x <= new_ub.x );
     new_lb.x = new_ub.x = point.x;
     break;
   case 1:
-    assert( new_lb.y <= point.y && point.y <= new_ub.y );
+    //assert( new_lb.y <= point.y && point.y <= new_ub.y );
     new_lb.y = new_ub.y = point.y;
     break;
   case 2:
-    if ( new_lb.z <= point.z && point.z <= new_ub.z ) {
-    } else {
-      printf("%f <= %f <= %f\n", new_lb.z, point.z, new_ub.z);
-      assert(0);
-    }
+    //assert( new_lb.z <= point.z && point.z <= new_ub.z );
     new_lb.z = new_ub.z = point.z;
     break;
   }
@@ -104,11 +101,13 @@ Space::calcSAH(int dim, Vector3 point) {
       }
     }
   }
-  //return (N1 * V1 / V + N2 * V2 / V);
+  return (N1 * V1 / V + N2 * V2 / V);
+  /*
   if (N1 > N2)
     return N1 - N2;
   else
     return N2 - N1;
+  */
 }
 
 void
@@ -139,7 +138,7 @@ Space::split(Space * subspace1, Space * subspace2, int & split_d, Vector3 & spli
       }
     }
   }
-  assert( min_cost < FLT_MAX );
+  //assert( min_cost < FLT_MAX );
   Vector3 new_lb = m_lb;
   Vector3 new_ub = m_ub;
   switch (split_d) {
@@ -258,6 +257,7 @@ int
 Node::subdivision() {
   //printf("to divide %lu objects: ", m_space->objects()->size());
   if (m_space->objects()->size() < KDTREE_BUILD_THRESHOLD) {
+    g_profile.n_leaves++;
     //printf("no divide\n");
     return 0;
   }
@@ -267,6 +267,7 @@ Node::subdivision() {
   Space * subspace2 = new Space(m_space);
   m_space->split(subspace1, subspace2, m_split_d, m_split_p);
   //printf("divided to %lu and %lu\n", subspace1->objects()->size(), subspace2->objects()->size());
+  g_profile.n_nodes += 2;
   this->m_children[0] = new Node(subspace1);
   this->m_children[1] = new Node(subspace2);
   this->m_children[0]->subdivision();
@@ -277,13 +278,14 @@ Node::subdivision() {
 bool
 Node::traverse(HitInfo& minHit, const Ray& ray, float tMin, float tMax)
 {
+  g_profile.n_traversals++;
   bool hit = false;
   HitInfo tempMinHit = minHit;
   if (m_leaf) {
     Objects * objects = m_space->objects();
-    //printf("process leaf of %lu\n", objects->size());
     for (size_t i = 0; i < objects->size(); ++i) {
       if ( (*objects)[i]->intersect(tempMinHit, ray, tMin, tMax) ) {
+        g_profile.n_raytri_intersected++;
         hit = true;
         if (tempMinHit.t < minHit.t)
           minHit = tempMinHit;
@@ -293,24 +295,18 @@ Node::traverse(HitInfo& minHit, const Ray& ray, float tMin, float tMax)
     /* left sub-space */
     bool hit0 = false;
     if (m_children[0]->space()->intersect(ray)) {
-      //printf("traverse left node\n");
       tempMinHit = minHit;
       hit0 = m_children[0]->traverse(tempMinHit, ray, tMin, tMax);
       if (hit0 && tempMinHit.t < minHit.t)
         minHit = tempMinHit;
-    } else {
-      //printf("not intersect left node\n");
     }
     /* right sub-space */
     bool hit1 = false;
     if (m_children[1]->space()->intersect(ray)) {
-      //printf("traverse right node\n");
       tempMinHit = minHit;
       hit1 = m_children[1]->traverse(tempMinHit, ray, tMin, tMax);
       if (hit1 && tempMinHit.t < minHit.t)
         minHit = tempMinHit;
-    } else {
-      //printf("not intersect right node\n");            
     }
     hit = hit0 || hit1;
   }
@@ -350,6 +346,7 @@ Accel::build(Objects * objs)
   Space * space = new Space( Vector3(minx[0], minx[1], minx[2]),
                              Vector3(maxx[0], maxx[1], maxx[2]),
                              m_objects );
+  g_profile.n_nodes++;
   m_kdtree = new Node(space);
   m_kdtree->subdivision();
 }

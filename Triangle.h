@@ -17,7 +17,7 @@ public:
 	void setMesh(TriangleMesh* m) {m_mesh = m;}
 
 	virtual void renderGL();
-	virtual bool intersect(HitInfo& result, const Ray& ray, float tMin = 0.0f, float tMax = MIRO_TMAX);
+	virtual bool intersect(HitInfo& result, const Ray& ray, float tMin = 0.00001f, float tMax = MIRO_TMAX);
 
   Vector3 get_vertex(int i);
 
@@ -27,3 +27,4 @@ protected:
 };
 
 #endif // MIRO_TRIANGLE_H_INCLUDED
+

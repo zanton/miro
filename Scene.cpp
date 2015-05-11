@@ -38,26 +38,40 @@ Scene::preCalc()
 		pLight->preCalc();
 	}
 
-  double time = get_cur_time();
+  g_profile.n_nodes = 0;
+  g_profile.n_leaves = 0;
+  g_profile.build_t = get_cur_time();
+  g_profile.build_clock = get_cur_clock();
 	m_accel.build(&m_objects);
-  time = get_cur_time() - time;
-  printf("Build time: %lfs\n", time);
+  g_profile.build_clock = get_cur_clock() - g_profile.build_clock;
+  g_profile.build_t = get_cur_time() - g_profile.build_t;
+  printf("Build time: %lfs (%llu clocks)\n", g_profile.build_t, g_profile.build_clock);
+  printf("n_nodes = %ld\n"
+         "n_leaves = %ld\n",
+         g_profile.n_nodes,
+         g_profile.n_leaves);
 }
 
 void
 Scene::raytraceImage(Camera *cam, Image *img)
 {
-  double time = get_cur_time();
-  
 	Ray ray;
 	HitInfo hitInfo;
 	Vector3 shadeResult;
 
+  g_profile.n_rays = 0;
+  g_profile.n_traversals = 0;
+  g_profile.n_raytri_intersect = 0;
+  g_profile.n_raytri_intersected = 0;
+  
+  g_profile.render_t = get_cur_time();
+  g_profile.render_clock = get_cur_clock();
 	// loop over all pixels in the image
 	for (int j = 0; j < img->height(); ++j)
 	{
 		for (int i = 0; i < img->width(); ++i)
 		{
+      g_profile.n_rays++;
 			ray = cam->eyeRay(i, j, img->width(), img->height());
 			if (trace(hitInfo, ray))
 			{
@@ -73,12 +87,30 @@ Scene::raytraceImage(Camera *cam, Image *img)
 		printf("Rendering Progress: %.3f%%\r", j/float(img->height())*100.0f);
 		fflush(stdout);
 	}
+  g_profile.render_clock = get_cur_clock() - g_profile.render_clock;
+  g_profile.render_t = get_cur_time() - g_profile.render_t;
 
 	printf("Rendering Progress: 100.000%\n");
 	debug("done Raytracing!\n");
 
-  time = get_cur_time() - time;
-  printf("Render time: %lfs\n", time);
+  printf("Render time: %lfs (%llu clocks)\n", g_profile.render_t, g_profile.render_clock);
+
+  printf("n_rays = %ld\n"
+         "n_traversals = %ld\n"
+         "n_raytri_intersect = %ld\n"
+         "n_raytri_intersected = %ld\n",
+         g_profile.n_rays,
+         g_profile.n_traversals,
+         g_profile.n_raytri_intersect,
+         g_profile.n_raytri_intersected);
+  printf("%ld & %ld & %lfs (%llu clocks) & %ld & %ld & %ld & %lfs (%llu clocks)\n",
+         g_profile.n_nodes,
+         g_profile.n_leaves,
+         g_profile.build_t, g_profile.build_clock,
+         g_profile.n_rays,
+         g_profile.n_traversals,
+         g_profile.n_raytri_intersect,
+         g_profile.render_t, g_profile.render_clock);
 }
 
 bool

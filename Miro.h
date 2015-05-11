@@ -12,6 +12,7 @@ const float RadToDeg = 180.0f/PI;
 #include <stdio.h>
 #include <iostream>
 #include <sys/time.h>
+#include <tbb/tbb.h>
 
 class Ray;
 class HitInfo;
@@ -39,5 +40,21 @@ extern double get_cur_time();
 extern unsigned long long get_cur_clock();
 extern int triBoxOverlap(float boxcenter[3],float boxhalfsize[3],float triverts[3][3]);
 
+typedef struct Profile {
+  long n_nodes;
+  long n_leaves;
+  double build_t;
+  unsigned long long build_clock;
+  long n_rays;
+  long n_traversals;
+  long n_raytri_intersect;
+  long n_raytri_intersected;
+  double render_t;
+  unsigned long long render_clock;
+} Profile;
+
+extern Profile g_profile;
+
+#define real double
 
 #endif // __MIRO_H__
