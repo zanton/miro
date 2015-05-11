@@ -13,6 +13,7 @@ const float RadToDeg = 180.0f/PI;
 #include <iostream>
 #include <sys/time.h>
 #include <tbb/tbb.h>
+#include <tbb/task_group.h>
 
 class Ray;
 class HitInfo;

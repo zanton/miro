@@ -5,6 +5,8 @@ all: $(NAME)
 include Makedefs
 SOURCES -=  parse.cpp lexer.cpp
 OBJS -=  parse.o lexer.o
+CFLAGS += -std=c++11
+LIBS += -ltbb
 # 
 # lexer.cpp: lexer.lex
 # 	$(ECHO) "Flex-ing lexer.lex"
@@ -29,4 +31,3 @@ $(NAME): $(OBJS)
 	$(ECHO) "Linking $@..."
 	$(CC) -g -o $@ *.o $(LIBS) $(LIBDIRS) #$(OBJS) 
 	$(ECHO) "Built $@!"
-	

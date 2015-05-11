@@ -12,7 +12,9 @@ class Space
   Space(Space * parent);
   Objects * objects() {return m_objects;}
   bool overlap(Triangle * t);
+  int calcSAH_count(Objects * objects, Vector3 lb, Vector3 ub);
   float calcSAH(int dim, Vector3 point);
+  void overlap_objects(Objects * objects, Objects * overlapped_obj);
   void split(Space * subspace1, Space * subspace2, int & split_d, Vector3 & split_p);
   bool intersect(const Ray& ray);
   

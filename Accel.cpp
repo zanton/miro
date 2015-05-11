@@ -3,6 +3,7 @@
 #include "Console.h"
 #include <assert.h>
 
+#define MIRO_USE_TBB 0
 #define KDTREE_BUILD_THRESHOLD 100
 #define KDTREE_N_SAMPLES_TO_PIVOT 10
 
@@ -34,9 +35,9 @@ Space::overlap(Triangle * t) {
   }
   /* proper check */
   float boxhalfsize[3] =
-    { (m_ub.x - m_lb.x) / 2.0,
-      (m_ub.y - m_lb.y) / 2.0,
-      (m_ub.z - m_lb.z) / 2.0 };
+    { (m_ub.x - m_lb.x) / 2.0f,
+      (m_ub.y - m_lb.y) / 2.0f,
+      (m_ub.z - m_lb.z) / 2.0f };
   float boxcenter[3] =
     { m_lb.x + boxhalfsize[0],
       m_lb.y + boxhalfsize[1],
@@ -53,6 +54,26 @@ Space::overlap(Triangle * t) {
     return true;
   else
     return false;
+}
+
+int
+Space::calcSAH_count(Objects * objects, Vector3 lb, Vector3 ub) {
+  int N = 0;
+  Objects::iterator it;
+  for (it = objects->begin(); it != objects->end(); it++) {
+    Triangle * t = (Triangle *) *it;
+    int v;
+    for (v = 0; v < 3; v++) {
+      Vector3 p = t->get_vertex(v);
+      if (p.x >= lb.x && p.x <= ub.x
+          && p.y >= lb.y && p.y <= ub.y
+          && p.z >= lb.z && p.z <= ub.z) {
+        N++;
+        break;
+      }
+    }
+  }
+  return N;
 }
 
 float
@@ -78,29 +99,15 @@ Space::calcSAH(int dim, Vector3 point) {
   float V = V1 + V2;
   int N1 = 0;
   int N2 = 0;
-  Objects::iterator it;
-  for (it = m_objects->begin(); it != m_objects->end(); it++) {
-    Triangle * t = (Triangle *) *it;
-    int v;
-    for (v = 0; v < 3; v++) {
-      Vector3 p = t->get_vertex(v);
-      if (p.x >= m_lb.x && p.x <= new_ub.x
-          && p.y >= m_lb.y && p.y <= new_ub.y
-          && p.z >= m_lb.z && p.z <= new_ub.z) {
-        N1++;
-        break;
-      }
-    }
-    for (v = 0; v < 3; v++) {
-      Vector3 p = t->get_vertex(v);
-      if (p.x >= new_lb.x && p.x <= m_ub.x
-          && p.y >= new_lb.y && p.y <= m_ub.y
-          && p.z >= new_lb.z && p.z <= m_ub.z) {
-        N2++;
-        break;
-      }
-    }
-  }
+#if MIRO_USE_TBB  
+  tbb::task_group tg;
+  tg.run( [&]{N1 = this->calcSAH_count(m_objects, m_lb, new_ub);} );
+  tg.run( [&]{N2 = this->calcSAH_count(m_objects, new_lb, m_ub);} );
+  tg.wait();
+#else
+  N1 = calcSAH_count(m_objects, m_lb, new_ub);
+  N2 = calcSAH_count(m_objects, new_lb, m_ub);
+#endif
   return (N1 * V1 / V + N2 * V2 / V);
   /*
   if (N1 > N2)
@@ -108,6 +115,16 @@ Space::calcSAH(int dim, Vector3 point) {
   else
     return N2 - N1;
   */
+}
+
+void
+Space::overlap_objects(Objects * objects, Objects * overlapped_obj) {
+  Objects::iterator it;
+  for (it = objects->begin(); it != objects->end(); it++) {
+    Object * t = *it;
+    if (overlap((Triangle *) t))
+      overlapped_obj->push_back(t);
+  }  
 }
 
 void
@@ -159,6 +176,12 @@ Space::split(Space * subspace1, Space * subspace2, int & split_d, Vector3 & spli
   subspace2->m_lb = new_lb;
   subspace1->m_objects = new Objects;
   subspace2->m_objects = new Objects;
+#if MIRO_USE_TBB
+  tbb::task_group tg;
+  tg.run( [&]{subspace1->overlap_objects(m_objects, subspace1->m_objects);} );
+  tg.run( [&]{subspace2->overlap_objects(m_objects, subspace2->m_objects);} );
+  tg.wait();
+#else 
   Objects::iterator it;
   for (it = m_objects->begin(); it != m_objects->end(); it++) {
     Object * t = *it;
@@ -167,10 +190,11 @@ Space::split(Space * subspace1, Space * subspace2, int & split_d, Vector3 & spli
     if (subspace2->overlap((Triangle *) t))
       subspace2->m_objects->push_back(t);
   }
+#endif
 }
 
 static bool
-rayIntersectTriangle(const Ray & ray, const Vector3 & v0, const Vector3 & v1, const Vector3 & v2) {
+rayIntersectTriangle(const Ray & ray, const Vector3 & v0, const Vector3 & v1, const Vector3 & v2, float tMin = 0.00001f, float tMax = MIRO_TMAX) {
   // Cramer's rule
   Vector3 a = Vector3(v0.x - v1.x,
                       v0.y - v1.y,
@@ -184,15 +208,21 @@ rayIntersectTriangle(const Ray & ray, const Vector3 & v0, const Vector3 & v1, co
   Vector3 d = Vector3(v0.x - ray.o.x,
                       v0.y - ray.o.y,
                       v0.z - ray.o.z);
-  float det = dot( cross(a,b) , c);
-  float detx = dot( cross(d,b) , c);
-  float dety = dot( cross(a,d) , c);
-  float detz = dot( cross(a,b) , d);
+  Vector3 temp = cross(b,c);
+  float det = dot(a, temp); // (a x b) . c = a . (b x c)
+  float detx = dot(d, temp); // (d x b) . c = d . (b x c)
   float beta = detx / det;
+  if (beta < 0 || beta > 1.0)
+    return false;
+  temp = cross(a,d);
+  float dety = dot(temp, c);
   float gamma = dety / det;
+  if (gamma < 0 || beta + gamma > 1.0)
+    return false;
+  float detz = - dot(temp, b); // (a x b) . d = - (a x d) . b
   float t = detz / det;
   
-  if (beta > 0 && gamma > 0 && (beta + gamma < 1)) {
+  if (t >= tMin && t <= tMax) {
     return true;
   } else {
     return false;
@@ -270,8 +300,17 @@ Node::subdivision() {
   g_profile.n_nodes += 2;
   this->m_children[0] = new Node(subspace1);
   this->m_children[1] = new Node(subspace2);
+
+#if MIRO_USE_TBB
+  tbb::task_group tg;
+  tg.run( [&]{this->m_children[0]->subdivision();} );
+  tg.run( [&]{this->m_children[1]->subdivision();} );
+  tg.wait();
+#else
   this->m_children[0]->subdivision();
   this->m_children[1]->subdivision();
+#endif
+  
   return 1;
 }
 
@@ -292,23 +331,46 @@ Node::traverse(HitInfo& minHit, const Ray& ray, float tMin, float tMax)
       }
     }          
   } else {
-    /* left sub-space */
+    
     bool hit0 = false;
+    bool hit1 = false;
+    HitInfo tempMinHit0 = minHit;
+    HitInfo tempMinHit1 = minHit;
+    
+#if MIRO_USE_TBB
+    tbb::task_group tg;
+    tg.run( [&]{
+        if (m_children[0]->space()->intersect(ray)) {
+          hit0 = m_children[0]->traverse(tempMinHit0, ray, tMin, tMax);
+        }       
+      } );
+    tg.run( [&]{
+        if (m_children[1]->space()->intersect(ray)) {
+          hit1 = m_children[1]->traverse(tempMinHit1, ray, tMin, tMax);
+        }
+      } );
+    tg.wait();
+    if (hit0 && tempMinHit0.t < minHit.t)
+      minHit = tempMinHit0;
+    if (hit1 && tempMinHit1.t < minHit.t)
+      minHit = tempMinHit1;    
+    hit = hit0 || hit1;
+#else    
+    /* left sub-space */
     if (m_children[0]->space()->intersect(ray)) {
-      tempMinHit = minHit;
-      hit0 = m_children[0]->traverse(tempMinHit, ray, tMin, tMax);
-      if (hit0 && tempMinHit.t < minHit.t)
-        minHit = tempMinHit;
+      hit0 = m_children[0]->traverse(tempMinHit0, ray, tMin, tMax);
+      if (hit0 && tempMinHit0.t < minHit.t)
+        minHit = tempMinHit0;
     }
     /* right sub-space */
-    bool hit1 = false;
     if (m_children[1]->space()->intersect(ray)) {
-      tempMinHit = minHit;
-      hit1 = m_children[1]->traverse(tempMinHit, ray, tMin, tMax);
-      if (hit1 && tempMinHit.t < minHit.t)
-        minHit = tempMinHit;
+      hit1 = m_children[1]->traverse(tempMinHit1, ray, tMin, tMax);
+      if (hit1 && tempMinHit1.t < minHit.t)
+        minHit = tempMinHit1;
     }
-    hit = hit0 || hit1;
+    hit = hit0 || hit1;    
+#endif  
+
   }
   return hit;
 }
@@ -347,8 +409,16 @@ Accel::build(Objects * objs)
                              Vector3(maxx[0], maxx[1], maxx[2]),
                              m_objects );
   g_profile.n_nodes++;
+
   m_kdtree = new Node(space);
+
+#if MIRO_USE_TBB  
+  tbb::task_group tg;
+  tg.run( [&]{m_kdtree->subdivision();} );
+  tg.wait();
+#else
   m_kdtree->subdivision();
+#endif 
 }
 
 

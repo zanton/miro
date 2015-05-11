@@ -90,7 +90,7 @@ Scene::raytraceImage(Camera *cam, Image *img)
   g_profile.render_clock = get_cur_clock() - g_profile.render_clock;
   g_profile.render_t = get_cur_time() - g_profile.render_t;
 
-	printf("Rendering Progress: 100.000%\n");
+	printf("Rendering Progress: 100.000%%\n");
 	debug("done Raytracing!\n");
 
   printf("Render time: %lfs (%llu clocks)\n", g_profile.render_t, g_profile.render_clock);
